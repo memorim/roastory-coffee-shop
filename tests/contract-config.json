@@ -1,0 +1,33 @@
+{
+  "databaseModule": "server.js",
+  "appModule": "server.js",
+  "endpoints": [
+    {
+      "path": "/api/products"
+    },
+    {
+      "path": "/api/products/1"
+    },
+    {
+      "method": "post",
+      "path": "/api/orders",
+      "status": 201,
+      "body": {
+        "customer": "Contract",
+        "email": "contract@example.com",
+        "items": [
+          {
+            "productId": 1,
+            "quantity": 1
+          }
+        ]
+      }
+    },
+    {
+      "method": "post",
+      "path": "/api/orders",
+      "status": 400,
+      "body": {}
+    }
+  ]
+}

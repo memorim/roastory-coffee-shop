@@ -1,0 +1,54 @@
+[
+  {
+    "method": "get",
+    "path": "/api/products",
+    "status": 200,
+    "body": [
+      {
+        "available": "number",
+        "color": "string",
+        "id": "number",
+        "name": "string",
+        "notes": "string",
+        "origin": "string",
+        "price": "number",
+        "process": "string",
+        "score": "number"
+      }
+    ]
+  },
+  {
+    "method": "get",
+    "path": "/api/products/1",
+    "status": 200,
+    "body": {
+      "available": "number",
+      "color": "string",
+      "id": "number",
+      "name": "string",
+      "notes": "string",
+      "origin": "string",
+      "price": "number",
+      "process": "string",
+      "score": "number"
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/orders",
+    "status": 201,
+    "body": {
+      "id": "number",
+      "status": "string",
+      "total": "number"
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/orders",
+    "status": 400,
+    "body": {
+      "message": "string"
+    }
+  }
+]
