@@ -54,7 +54,7 @@ pnpm audit --audit-level=high
 
 Existing product/order tests, malformed-JSON regression, response contract and prior-schema upgrade checks.
 
-CI installs locked dependencies and runs the configured checks; documentation checks also validate local links/images. Python dependency auditing uses `pip-audit --disable-pip --no-deps --strict -r requirements-lock.txt`. A passing scanner only reports known advisories at the time of the run.
+CI installs locked dependencies and runs the configured checks; documentation checks also validate local links/images. Node dependency advisories are checked with `pnpm audit --audit-level=high`. A passing scanner only reports known advisories at the time of the run.
 
 ## Limits and next steps
 
