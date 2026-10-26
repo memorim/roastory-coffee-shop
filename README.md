@@ -1,31 +1,33 @@
-# Roastory — Coffee Shop
+# Roastory — магазин свежеобжаренного кофе
 
-Browse coffee lots and create an order with server-calculated prices.
+Каталог кофейных лотов, корзина и оформление заказа с расчётом итоговой суммы на сервере.
 
 
-![Desktop interface](docs/desktop.png)
 
-<img src="docs/mobile.png" width="320" alt="Mobile interface">
+![Компьютерная версия](docs/desktop.png)
 
-[Short interaction recording](docs/demo.gif)
+<img src="docs/mobile.png" width="320" alt="Мобильная версия">
 
-## Implemented
+[Короткая демонстрация](docs/demo.gif)
 
-- Product filtering, cart, quantity selection and order creation.
-- Saved order and order-item rows with a server-computed total.
+## Возможности
 
-## Stack and architecture
+- Фильтрация кофе по обработке, выбор количества и корзина.
+- Сохранение заказа и его позиций в SQLite.
+- Фотографии кофе и обжарки, адаптивные карточки и локальные изображения.
 
-JavaScript, Express, Zod, built-in Node SQLite and a static HTML/CSS interface.
+## Стек и устройство
 
-## Technical mechanisms and security
+JavaScript, Express, Zod, встроенный SQLite в Node.js и HTML/CSS.
 
-- Prices are loaded from products on the server; the order and items are written in one transaction.
-- Default loopback binding and small JSON error responses reduce accidental exposure of the local API.
+## Ключевые решения
 
-## Local setup
+- Цена загружается из серверного каталога. Заказ и его позиции сохраняются одной транзакцией.
+- Параметры проходят серверную валидацию, ошибки JSON возвращают ограниченный ответ. По умолчанию API слушает loopback.
 
-Node.js 24.18.0 and pnpm 11.7.0 (see version files).
+## Локальный запуск
+
+Node.js 24.18.0 и pnpm 11.7.0; версии закреплены в файлах проекта.
 
 ```bash
 npm install --global pnpm@11.7.0
@@ -33,17 +35,17 @@ pnpm install --frozen-lockfile
 pnpm start
 ```
 
-Open `http://localhost:4500`. For live UI development use `pnpm dev` where available. The API binds to `127.0.0.1` by default.
+Откройте `http://localhost:4500`. Сервер по умолчанию слушает 127.0.0.1. Для разработки доступен `pnpm dev`.
 
-## Configuration
+## Настройки
 
-Configure process environment variables using [.env.example](.env.example). `pnpm start` uses the process environment; it does not implicitly load that file. To load a copied `.env` explicitly, run `node --env-file=.env server.js`.
+Параметры перечислены в [.env.example](.env.example). `pnpm start` использует окружение процесса и не загружает файл автоматически. После копирования `.env` его можно загрузить явно: `node --env-file=.env server.js`.
 
-## Database and upgrades
+## Данные и обновления
 
-SQLite is stored at `data/roastory.db`. Initialization creates/migrates the schema; sample rows are included for local use. Back up the database before upgrades. Do not remove the database as a migration step.
+SQLite хранится в `data/roastory.db`. Инициализация создаёт или обновляет схему. Перед обновлением сохраните резервную копию; удалять БД вместо миграции не нужно.
 
-## Verification
+## Проверки
 
 ```bash
 pnpm test
@@ -52,17 +54,15 @@ pnpm test:upgrade
 pnpm audit --audit-level=high
 ```
 
-Existing product/order tests, malformed-JSON regression, response contract and prior-schema upgrade checks.
+Тесты каталога и заказа, некорректного JSON, контракта ответа и сохранности данных при обновлении схемы.
 
-CI installs locked dependencies and runs the configured checks; documentation checks also validate local links/images. Node dependency advisories are checked with `pnpm audit --audit-level=high`. A passing scanner only reports known advisories at the time of the run.
+CI устанавливает зависимости по зафиксированным версиям и запускает настроенные проверки. Отдельная проверка документации находит неверные локальные ссылки и изображения. Проверка уязвимостей учитывает известные проблемы на момент запуска.
 
-## Limits and next steps
+## Ограничения
 
-- No payment, delivery integration or authenticated customer accounts. Order detail endpoints are not protected for public exposure and include customer information.
-- Request array/field bounds and durable customer authorization are required before a public store deployment.
+- Платежи, доставка и аккаунты покупателей не подключены.
+- Просмотр заказа не защищён для публичного доступа и содержит контакты клиента. Перед публичным запуском нужны авторизация, ограничения полей/массивов и защита формы от злоупотреблений.
 
-## Further documentation
+## Документация
 
-[Audit findings and follow-up](docs/AUDIT_2026_10.md) · [Technical reference](docs/TECHNICAL.md) · [Change history](CHANGELOG.md)
-
-[API request/response example](docs/API_EXAMPLE.md)
+[Результаты аудита](docs/AUDIT_2026_10.md) · [Техническая документация](docs/TECHNICAL.md) · [Пример запроса и ответа](docs/API_EXAMPLE.md) · [История изменений](CHANGELOG.md)
