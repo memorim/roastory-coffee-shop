@@ -17,6 +17,7 @@ try{
  process.env.NODE_ENV='test';
  const older=await import(pathToFileURL(join(directory,baseline.module)).href),latest=await import(pathToFileURL(resolve(baseline.module)).href),file=join(directory,'previous.sqlite');
  previous=(older.createDb||older.createDatabase)(file);
+ previous.prepare("INSERT INTO orders(customer,email,total,status,created_at) VALUES(?,?,2180,'new',?)").run('Upgrade customer','upgrade@example.test','2026-01-01T00:00:00Z');previous.prepare('INSERT INTO order_items VALUES(1,1,2,1090)').run();
  const before=snapshot(previous);assert.ok(before.some(t=>t.rows.length),'Previous release must contain records');previous.close();previous=null;
  current=(latest.createDb||latest.createDatabase)(file);
  for(const table of before){
