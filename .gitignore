@@ -6,3 +6,6 @@ data/
 Thumbs.db
 
 .upgrade-test-*/
+
+/test-results/
+/playwright-report/
