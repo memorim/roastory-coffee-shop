@@ -1,0 +1,70 @@
+{
+  "/api/products": [
+    {
+      "id": 1,
+      "name": "Kayon Mountain",
+      "origin": "Эфиопия",
+      "process": "Натуральная",
+      "notes": "бергамот · черника · какао",
+      "price": 1090,
+      "score": 4.9,
+      "color": "#d9653b",
+      "available": 1
+    },
+    {
+      "id": 2,
+      "name": "El Mirador",
+      "origin": "Колумбия",
+      "process": "Мытая",
+      "notes": "красное яблоко · карамель",
+      "price": 990,
+      "score": 4.8,
+      "color": "#65805c",
+      "available": 1
+    },
+    {
+      "id": 3,
+      "name": "Los Pirineos",
+      "origin": "Сальвадор",
+      "process": "Хани",
+      "notes": "абрикос · миндаль · мёд",
+      "price": 1190,
+      "score": 4.9,
+      "color": "#d29f48",
+      "available": 1
+    },
+    {
+      "id": 4,
+      "name": "Karatu Estate",
+      "origin": "Танзания",
+      "process": "Мытая",
+      "notes": "смородина · чай · лайм",
+      "price": 1050,
+      "score": 4.7,
+      "color": "#725e8d",
+      "available": 1
+    },
+    {
+      "id": 5,
+      "name": "Serra Negra",
+      "origin": "Бразилия",
+      "process": "Натуральная",
+      "notes": "фундук · шоколад · вишня",
+      "price": 890,
+      "score": 4.8,
+      "color": "#9b6047",
+      "available": 1
+    },
+    {
+      "id": 6,
+      "name": "Decaf Popayán",
+      "origin": "Колумбия",
+      "process": "Sugarcane decaf",
+      "notes": "мандалин · ирис · какао",
+      "price": 1150,
+      "score": 4.6,
+      "color": "#53827c",
+      "available": 1
+    }
+  ]
+}
