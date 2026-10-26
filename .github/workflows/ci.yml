@@ -26,3 +26,6 @@ jobs:
       - run: pnpm test:contract
       - run: pnpm test:upgrade
       - run: node --check public/app.js
+      - run: node --check server.js
+      - run: pnpm exec playwright install --with-deps --only-shell chromium
+      - run: pnpm test:e2e

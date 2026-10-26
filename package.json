@@ -8,13 +8,15 @@
     "start": "node server.js",
     "test": "node --test tests/*.test.js",
     "test:upgrade": "node tests/check-upgrade.mjs",
-    "test:contract": "node tests/check-contract.mjs"
+    "test:contract": "node tests/check-contract.mjs",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "express": "^5.3.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.1",
     "supertest": "^7.3.1"
   },
   "packageManager": "pnpm@11.7.0",
