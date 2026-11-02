@@ -24,6 +24,11 @@ export function createDb(file = resolve(root, "data", "roastory.db")) {
       db.exec(
         `INSERT INTO products VALUES(1,'Kayon Mountain','Эфиопия','Натуральная','бергамот · черника · какао',1090,4.9,'#d9653b',1),(2,'El Mirador','Колумбия','Мытая','красное яблоко · карамель',990,4.8,'#65805c',1),(3,'Los Pirineos','Сальвадор','Хани','абрикос · миндаль · мёд',1190,4.9,'#d29f48',1),(4,'Karatu Estate','Танзания','Мытая','смородина · чай · лайм',1050,4.7,'#725e8d',1),(5,'Serra Negra','Бразилия','Натуральная','фундук · шоколад · вишня',890,4.8,'#9b6047',1),(6,'Decaf Popayán','Колумбия','Sugarcane decaf','мандалин · ирис · какао',1150,4.6,'#53827c',1);`,
       );
+    const productColumns = db.prepare("PRAGMA table_info(products)").all().map(c => c.name);
+    if (!productColumns.includes('stock')) {
+      db.exec('ALTER TABLE products ADD COLUMN stock INTEGER CHECK(stock IS NULL OR stock >= 0)');
+      if (!initialized) db.exec('UPDATE products SET stock=100');
+    }
     const columns = db
       .prepare("PRAGMA table_info(orders)")
       .all()
@@ -141,7 +146,7 @@ export function createApp(db = createDb(), { now = Date.now } = {}) {
       const items = [];
       for (const item of p.data.items) {
         const product = db
-          .prepare("SELECT id,price,available FROM products WHERE id=?")
+          .prepare("SELECT id,price,available,stock FROM products WHERE id=?")
           .get(item.productId);
         if (!product || !product.available) {
           db.exec("ROLLBACK");
@@ -155,6 +160,11 @@ export function createApp(db = createDb(), { now = Date.now } = {}) {
           product.price > 1000000
         )
           throw new Error("Invalid catalog price");
+        if (product.stock === null || product.stock < item.quantity) {
+          db.exec("ROLLBACK");
+          return res.status(409).json({ message: "Недостаточно подтверждённых остатков" });
+        }
+        db.prepare('UPDATE products SET stock=stock-? WHERE id=?').run(item.quantity, item.productId);
         total += product.price * item.quantity;
         items.push({ ...item, price: product.price });
       }

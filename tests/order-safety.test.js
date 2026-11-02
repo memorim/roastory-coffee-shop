@@ -130,3 +130,19 @@ test("order bounds, server prices, idempotency and rollback are enforced", async
     db.close();
   }
 });
+
+ test('stock is reserved once, overselling and partial reservations roll back', async () => {
+  const db=createDb(':memory:'), app=createApp(db);
+  try {
+    db.prepare('UPDATE products SET stock=2 WHERE id=1').run();
+    const send = () => request(app).post('/api/orders').set('Idempotency-Key','stock-retry-key').send(payload);
+    assert.equal((await send()).status,201);
+    assert.equal((await send()).status,200);
+    assert.equal(db.prepare('SELECT stock FROM products WHERE id=1').get().stock,0);
+    assert.equal((await request(app).post('/api/orders').send(payload)).status,409);
+    db.prepare('UPDATE products SET stock=2 WHERE id=1').run();
+    db.prepare('UPDATE products SET stock=0 WHERE id=2').run();
+    assert.equal((await request(app).post('/api/orders').send({...payload,items:[{productId:1,quantity:1},{productId:2,quantity:1}]})).status,409);
+    assert.equal(db.prepare('SELECT stock FROM products WHERE id=1').get().stock,2);
+  } finally {db.close();}
+});
