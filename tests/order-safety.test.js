@@ -34,7 +34,7 @@ test("receipts do not disclose personal data", async () => {
     app = createApp(db);
   try {
     const out = await request(app).post("/api/orders").send(payload);
-    const receipt = await request(app).get("/api/orders/" + out.body.id);
+    const receipt = await request(app).get("/api/orders/" + out.body.id).set("X-Order-Key",out.body.accessKey);
     assert.equal(receipt.status, 200);
     assert.ok(!JSON.stringify(receipt.body).includes(payload.email));
     assert.ok(!JSON.stringify(receipt.body).includes(payload.customer));
@@ -145,4 +145,18 @@ test("order bounds, server prices, idempotency and rollback are enforced", async
     assert.equal((await request(app).post('/api/orders').send({...payload,items:[{productId:1,quantity:1},{productId:2,quantity:1}]})).status,409);
     assert.equal(db.prepare('SELECT stock FROM products WHERE id=1').get().stock,2);
   } finally {db.close();}
+});
+
+ test('receipt keys protect buyers, owner token protects inventory, and old contacts are removed', async()=>{
+ const db=createDb(':memory:');const old=process.env.APP_OWNER_TOKEN;process.env.APP_OWNER_TOKEN='z'.repeat(40);
+ try {const app=createApp(db),out=await request(app).post('/api/orders').send(payload);
+ assert.equal((await request(app).get('/api/orders/'+out.body.id)).status,404);
+ assert.equal((await request(app).get('/api/orders/'+out.body.id).set('X-Order-Key','wrong')).status,404);
+ assert.equal((await request(app).get('/api/owner/orders')).status,401);
+ const stock=db.prepare('SELECT stock FROM products WHERE id=1').get().stock;
+ assert.equal((await request(app).patch('/api/owner/products/1/stock').auth('z'.repeat(40),{type:'bearer'}).send({stock:50,expectedStock:stock})).status,200);
+ assert.equal((await request(app).patch('/api/owner/products/1/stock').auth('z'.repeat(40),{type:'bearer'}).send({stock:99,expectedStock:stock})).status,409);
+ db.prepare("UPDATE orders SET created_at='2000-01-01T00:00:00Z'").run();
+ await request(createApp(db)).get('/api/products');assert.equal(db.prepare('SELECT email FROM orders LIMIT 1').get().email,'');
+ }finally{if(old===undefined)delete process.env.APP_OWNER_TOKEN;else process.env.APP_OWNER_TOKEN=old;db.close();}
 });

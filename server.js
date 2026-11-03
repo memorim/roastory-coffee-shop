@@ -1,7 +1,8 @@
+import {ownerAccess,publicOrigin} from "./owner-access.js";
 import { consumeBudget, initializeBudgets } from "./request-budget.js";
 import express from "express";
 import { DatabaseSync } from "node:sqlite";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -49,14 +50,19 @@ export function createDb(file = resolve(root, "data", "roastory.db")) {
 }
 export function createApp(db = createDb(), { now = Date.now } = {}) {
   const app = express();
+  const hostedOrigin=publicOrigin();
+  const retentionDays=Number(process.env.CONTACT_RETENTION_DAYS || 90);
+  if(!Number.isInteger(retentionDays)||retentionDays<1||retentionDays>3650)throw new Error('Invalid retention');
+  let swept=-Infinity;
+  app.use('/api',(_req,_res,next)=>{const time=now();if(time-swept>=3600000){db.prepare("UPDATE orders SET customer='[removed]',email='' WHERE created_at<? AND email!=''").run(new Date(time-retentionDays*86400000).toISOString());swept=time;}next();});
   app.use("/api", (req, res, next) => {
-    if (!["localhost", "127.0.0.1", "::1", "[::1]"].includes(req.hostname))
+    if (hostedOrigin ? req.get("host") !== hostedOrigin.host : !["localhost", "127.0.0.1", "::1", "[::1]"].includes(req.hostname))
       return res.status(403).json({ message: "Используйте локальный адрес" });
     if (
-      req.method === "POST" &&
+      !["GET","HEAD","OPTIONS"].includes(req.method) &&
       (req.get("sec-fetch-site") === "cross-site" ||
         (req.get("origin") &&
-          req.get("origin") !== `${req.protocol}://${req.get("host")}`))
+          req.get("origin") !== (hostedOrigin?.origin || `${req.protocol}://${req.get("host")}`)))
     )
       return res
         .status(403)
@@ -115,7 +121,7 @@ export function createApp(db = createDb(), { now = Date.now } = {}) {
     });
     const p = schema.safeParse(req.body);
     if (!p.success) return res.status(400).json({ message: "Проверьте заказ" });
-    const key = req.get("Idempotency-Key") ?? null;
+    const key = req.get("Idempotency-Key") ?? randomUUID();
     if (key !== null && !/^[A-Za-z0-9_-]{8,100}$/.test(key))
       return res.status(400).json({ message: "Некорректный ключ операции" });
     const hash = createHash("sha256")
@@ -137,6 +143,7 @@ export function createApp(db = createDb(), { now = Date.now } = {}) {
               id: previous.id,
               total: previous.total,
               status: previous.status,
+              accessKey: key,
             })
           : res.status(409).json({
               message: "Ключ операции уже использован с другими данными",
@@ -188,19 +195,30 @@ export function createApp(db = createDb(), { now = Date.now } = {}) {
       db.exec("COMMIT");
       res
         .status(201)
-        .json({ id: Number(out.lastInsertRowid), total, status: "new" });
+        .json({ id: Number(out.lastInsertRowid), total, status: "new", accessKey:key });
     } catch (e) {
       if (db.isTransaction) db.exec("ROLLBACK");
       throw e;
     }
   });
   app.get("/api/orders/:id", (req, res) => {
+    const allowed = db.prepare('SELECT request_key FROM orders WHERE id=?').get(Number(req.params.id));
+    const supplied=req.get('X-Order-Key') || '';
+    if(!allowed || !allowed.request_key || !supplied || createHash('sha256').update(supplied).digest('hex') !== createHash('sha256').update(allowed.request_key).digest('hex')) return res.status(404).json({message:'Заказ не найден'});
     const o = db
       .prepare("SELECT id,total,status,created_at FROM orders WHERE id=?")
       .get(Number(req.params.id));
     return o
       ? res.json(o)
       : res.status(404).json({ message: "Заказ не найден" });
+  });
+  app.get('/api/owner/orders',ownerAccess(),(_req,res)=>res.json(db.prepare('SELECT id,customer,email,total,status,created_at FROM orders ORDER BY id DESC LIMIT 100').all()));
+  app.patch('/api/owner/products/:id/stock',ownerAccess(),(req,res)=>{
+    const p=z.object({stock:z.number().int().min(0).max(1000000),expectedStock:z.number().int().min(0).nullable()}).strict().safeParse(req.body);
+    if(!p.success)return res.status(400).json({message:'Проверьте остаток'});
+    const result=db.prepare('UPDATE products SET stock=? WHERE id=? AND stock IS ?').run(p.data.stock,Number(req.params.id),p.data.expectedStock);
+    if(!result.changes)return res.status(409).json({message:'Остаток уже изменён. Обновите данные.'});
+    res.json({ok:true,stock:p.data.stock});
   });
   app.use(express.static(resolve(root, "public")));
   app.get(/^(?!\/api).*/, (_q, res) =>
@@ -221,7 +239,7 @@ export function createApp(db = createDb(), { now = Date.now } = {}) {
 }
 if (process.env.NODE_ENV !== "test") {
   if (
-    process.env.HOST &&
+    !process.env.APP_PUBLIC_ORIGIN && process.env.HOST &&
     !["localhost", "127.0.0.1", "::1"].includes(process.env.HOST)
   )
     throw new Error("Roastory requires a loopback HOST");

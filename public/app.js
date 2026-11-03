@@ -179,6 +179,7 @@ document.querySelector("#checkout").onsubmit = async (e) => {
       ? `Демо-заказ №${o.id} сохранён. Сумма ${money(o.total)}.`
       : o.message;
     if (r.ok) {
+      try { const receipts=JSON.parse(localStorage.getItem('roastory-receipts')||'[]'); receipts.unshift({id:o.id,key:o.accessKey||lastOrder.key}); localStorage.setItem('roastory-receipts',JSON.stringify(receipts.slice(0,50))); } catch { /* Receipt remains available during this session. */ }
       cart = {};
       save();
       e.target.reset();
@@ -193,3 +194,15 @@ document.querySelector("#checkout").onsubmit = async (e) => {
   }
 };
 load();
+
+const receiptsPanel=document.createElement('section');receiptsPanel.style.cssText='padding:24px;max-width:1100px;margin:auto';
+receiptsPanel.innerHTML='<h2>Мои заказы</h2><button type="button">Обновить статусы заказов</button><ul></ul><p role="status"></p>';
+document.querySelector('main').append(receiptsPanel);
+receiptsPanel.querySelector('button').onclick=async()=>{
+ const list=receiptsPanel.querySelector('ul'),status=receiptsPanel.querySelector('p');list.replaceChildren();status.textContent='Загрузка…';
+ try {const receipts=JSON.parse(localStorage.getItem('roastory-receipts')||'[]');for(const item of receipts.slice(0,50)){
+ const response=await fetch('/api/orders/'+encodeURIComponent(item.id),{headers:{'X-Order-Key':item.key}});
+ const li=document.createElement('li');if(response.ok){const o=await response.json();li.textContent=`Заказ №${o.id} · ${money(o.total)} · ${o.status}`;}else li.textContent=`Заказ №${item.id}: недоступен`;list.append(li);
+ }status.textContent=receipts.length?'':'В этом браузере пока нет сохранённых заказов.';
+ }catch{status.textContent='Не удалось загрузить заказы. Повторите позже.';}
+};
