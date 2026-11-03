@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>Заказы и остатки · Roastory</title>
+    <link rel="stylesheet" href="owner.css" />
+  </head>
+  <body style="--accent: #704b34">
+    <main>
+      <header>
+        <div>
+          <span>Roastory / Кабинет владельца</span>
+          <h1>Заказы и остатки</h1>
+        </div>
+        <a href="./">На сайт</a>
+      </header>
+      <section>
+        <form id="login">
+          <label for="owner-key">Ключ владельца</label>
+          <div class="row">
+            <input
+              id="owner-key"
+              type="password"
+              required
+              minlength="32"
+              maxlength="256"
+              autocomplete="off"
+            /><button>Войти</button>
+          </div>
+          <p class="muted">
+            Ключ хранится только в памяти этой вкладки до выхода или обновления
+            страницы.
+          </p>
+        </form>
+        <div class="actions">
+          <button id="logout" class="secondary" hidden>Выйти</button
+          ><button id="refresh" class="secondary">Обновить</button>
+        </div>
+        <p id="status" role="status" aria-live="polite"></p>
+      </section>
+      <div id="workspace" hidden>
+        <section>
+          <h2>Заказы</h2>
+          <div id="orders"></div>
+        </section>
+        <section>
+          <h2>Остатки</h2>
+          <p>
+            Укажите фактическое количество упаковок. Если остаток уже изменился,
+            обновите данные перед сохранением.
+          </p>
+          <div id="products"></div>
+        </section>
+      </div>
+    </main>
+    <script src="owner.js" defer></script>
+  </body>
+</html>
