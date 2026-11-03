@@ -202,7 +202,9 @@ receiptsPanel.querySelector('button').onclick=async()=>{
  const list=receiptsPanel.querySelector('ul'),status=receiptsPanel.querySelector('p');list.replaceChildren();status.textContent='Загрузка…';
  try {const receipts=JSON.parse(localStorage.getItem('roastory-receipts')||'[]');for(const item of receipts.slice(0,50)){
  const response=await fetch('/api/orders/'+encodeURIComponent(item.id),{headers:{'X-Order-Key':item.key}});
- const li=document.createElement('li');if(response.ok){const o=await response.json();li.textContent=`Заказ №${o.id} · ${money(o.total)} · ${o.status}`;}else li.textContent=`Заказ №${item.id}: недоступен`;list.append(li);
+ const li=document.createElement('li');if(response.ok){const o=await response.json();li.textContent=`Заказ №${o.id} · ${money(o.total)} · ${o.status}`;
+ const pay=document.createElement('button');pay.textContent='Тестовая оплата';pay.onclick=async()=>{pay.disabled=true;try{const r=await fetch('/api/orders/'+o.id+'/payment',{method:'POST',headers:{'X-Order-Key':item.key}});const p=await r.json();if(!r.ok)throw new Error(p.message||'Ошибка оплаты');if(p.confirmationUrl)location.assign(p.confirmationUrl);}catch(e){status.textContent=e.message;}finally{pay.disabled=false;}};li.append(pay);
+ const refresh=document.createElement('button');refresh.textContent='Проверить оплату';refresh.onclick=async()=>{try{const r=await fetch('/api/orders/'+o.id+'/payment/refresh',{method:'POST',headers:{'X-Order-Key':item.key}});const p=await r.json();status.textContent=r.ok?'Статус оплаты: '+p.status:(p.message||'Ошибка');}catch{status.textContent='Не удалось проверить оплату';}};li.append(refresh);}else li.textContent=`Заказ №${item.id}: недоступен`;list.append(li);
  }status.textContent=receipts.length?'':'В этом браузере пока нет сохранённых заказов.';
  }catch{status.textContent='Не удалось загрузить заказы. Повторите позже.';}
 };

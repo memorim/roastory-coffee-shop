@@ -1,3 +1,4 @@
+import { initializePayments, testPaymentService } from "./payments.js";
 import {ownerAccess,publicOrigin} from "./owner-access.js";
 import { consumeBudget, initializeBudgets } from "./request-budget.js";
 import express from "express";
@@ -40,6 +41,7 @@ export function createDb(file = resolve(root, "data", "roastory.db")) {
     db.exec(
       "CREATE UNIQUE INDEX IF NOT EXISTS orders_request_key ON orders(request_key); COMMIT",
     );
+    initializePayments(db);
     initializeBudgets(db);
     return db;
   } catch (error) {
@@ -51,6 +53,7 @@ export function createDb(file = resolve(root, "data", "roastory.db")) {
 export function createApp(db = createDb(), { now = Date.now } = {}) {
   const app = express();
   const hostedOrigin=publicOrigin();
+  const payments=testPaymentService(db);
   const retentionDays=Number(process.env.CONTACT_RETENTION_DAYS || 90);
   if(!Number.isInteger(retentionDays)||retentionDays<1||retentionDays>3650)throw new Error('Invalid retention');
   let swept=-Infinity;
@@ -211,6 +214,17 @@ export function createApp(db = createDb(), { now = Date.now } = {}) {
     return o
       ? res.json(o)
       : res.status(404).json({ message: "Заказ не найден" });
+  });
+  const buyer=(req,res,next)=>{const row=db.prepare('SELECT * FROM orders WHERE id=?').get(Number(req.params.id));if(!row||!row.request_key||req.get('X-Order-Key')!==row.request_key)return res.status(404).json({message:'Заказ не найден'});req.order=row;next();};
+  app.post('/api/orders/:id/payment',buyer,async(req,res)=>{
+    if(!payments.enabled)return res.status(503).json({message:'Тестовая оплата не настроена'});
+    const result=await payments.create(req.order.id,req.order.total*100,'Roastory: тестовая оплата заказа '+req.order.id);
+    res.json({test:true,status:result.status,confirmationUrl:result.confirmation_url});
+  });
+  app.post('/api/orders/:id/payment/refresh',buyer,async(req,res)=>{
+    const result=await payments.refresh(req.order.id);if(!result)return res.status(404).json({message:'Платёж не найден'});
+    if(result.status==='succeeded')db.prepare("UPDATE orders SET status='paid' WHERE id=?").run(req.order.id);
+    res.json({test:true,status:result.status});
   });
   app.get('/api/owner/orders',ownerAccess(),(_req,res)=>res.json(db.prepare('SELECT id,customer,email,total,status,created_at FROM orders ORDER BY id DESC LIMIT 100').all()));
   app.patch('/api/owner/products/:id/stock',ownerAccess(),(req,res)=>{
