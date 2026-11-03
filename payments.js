@@ -17,6 +17,7 @@ export function testPaymentService(db,{config=paymentConfig(),send=fetch}={}) {
   return data;
  }
  function verify(data,row) {
+  if(row.provider_id && data.id!==row.provider_id)throw new Error('Payment identifier does not match');
   const amount=(row.amount_cents/100).toFixed(2);
   if(data.amount?.value!==amount||data.amount?.currency!=='RUB'||data.metadata?.reference!==row.idempotence_key)throw new Error('Payment details do not match');
   if(data.confirmation?.confirmation_url) {const u=new URL(data.confirmation.confirmation_url);if(u.protocol!=='https:'||!['yoomoney.ru','yookassa.ru'].includes(u.hostname)||u.username||u.password)throw new Error('Invalid confirmation URL');}
