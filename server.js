@@ -1,4 +1,5 @@
 import { initializePayments, testPaymentService } from "./payments.js";
+import { dataDirectory } from "./storage.js";
 import {ownerAccess,publicOrigin} from "./owner-access.js";
 import { consumeBudget, initializeBudgets } from "./request-budget.js";
 import express from "express";
@@ -9,7 +10,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 const root = dirname(fileURLToPath(import.meta.url));
-export function createDb(file = resolve(root, "data", "roastory.db")) {
+export function createDb(file = resolve(dataDirectory(), "roastory.db")) {
   if (file !== ":memory:") mkdirSync(dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
   try {
