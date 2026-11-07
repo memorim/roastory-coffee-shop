@@ -1,0 +1,19 @@
+# Review-only plan: applying this changes the Free service to paid compute.
+services:
+  - type: web
+    name: memorim-roastory-test
+    runtime: node
+    region: frankfurt
+    repo: https://github.com/memorim/roastory-coffee-shop
+    branch: main
+    plan: 0.5c-512mb
+    numInstances: 1
+    buildCommand: npm install --omit=dev --ignore-scripts --package-lock=false
+    startCommand: node server.js
+    envVars:
+      - key: ROASTORY_DATA_DIRECTORY
+        value: /var/lib/roastory
+    disk:
+      name: roastory-data
+      mountPath: /var/lib/roastory
+      sizeGB: 1
