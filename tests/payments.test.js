@@ -8,3 +8,8 @@ test('test payments use durable idempotency and verify amount currency reference
  const wrongId=testPaymentService(db,{config,send:async()=>new Response(JSON.stringify({id:'different-provider-id',test:true,paid:true,status:'succeeded',amount:body.amount,metadata:body.metadata}))});await assert.rejects(()=>wrongId.refresh(1),/identifier/);
  }finally{db.close();}
 });
+test('test payments cancel pending payment and persist canceled status',async()=>{
+ const db=new DatabaseSync(':memory:');initializePayments(db);const config={shop:'1',key:'test_secret',returnUrl:'https://shop.example/'};
+ const send=async(url,options)=>new Response(JSON.stringify({id:'provider-id',test:true,paid:false,status:options.method==='POST'&&url.endsWith('/cancel')?'canceled':'pending',amount:{value:'12.34',currency:'RUB'},metadata:{reference:db.prepare('SELECT idempotence_key FROM test_payments WHERE resource_id=?').get('2').idempotence_key}}));
+ try {const service=testPaymentService(db,{config,send});await service.create(2,1234,'Cancel');const result=await service.cancel(2);assert.equal(result.status,'canceled');assert.equal((await service.cancel(2)).status,'canceled');}finally{db.close();}
+});
