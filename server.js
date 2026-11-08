@@ -227,6 +227,20 @@ export function createApp(db = createDb(), { now = Date.now } = {}) {
     if(result.status==='succeeded')db.prepare("UPDATE orders SET status='paid' WHERE id=?").run(req.order.id);
     res.json({test:true,status:result.status});
   });
+  app.post('/api/orders/:id/payment/cancel',buyer,async(req,res)=>{
+    if(!payments.enabled)return res.status(503).json({message:'Тестовая оплата не настроена'});
+    const result=await payments.cancel(req.order.id);if(!result)return res.status(404).json({message:'Платёж не найден'});
+    if(result.status==='canceled' && req.order.status!=='canceled' && req.order.status!=='paid'){
+      db.exec('BEGIN IMMEDIATE');
+      try{
+        const items=db.prepare('SELECT product_id,quantity FROM order_items WHERE order_id=?').all(req.order.id);
+        for(const item of items)db.prepare('UPDATE products SET stock=stock+? WHERE id=?').run(item.quantity,item.product_id);
+        db.prepare("UPDATE orders SET status='canceled' WHERE id=? AND status NOT IN ('paid','canceled')").run(req.order.id);
+        db.exec('COMMIT');
+      }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
+    }
+    res.json({test:true,status:result.status});
+  });
   app.get('/api/owner/orders',ownerAccess(),(_req,res)=>res.json(db.prepare('SELECT id,customer,email,total,status,created_at FROM orders ORDER BY id DESC LIMIT 100').all()));
   app.patch('/api/owner/products/:id/stock',ownerAccess(),(req,res)=>{
     const p=z.object({stock:z.number().int().min(0).max(1000000),expectedStock:z.number().int().min(0).nullable()}).strict().safeParse(req.body);
