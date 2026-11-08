@@ -8,9 +8,9 @@ export function paymentConfig(env=process.env) {
 }
 export function initializePayments(db) {db.exec(`CREATE TABLE IF NOT EXISTS test_payments(resource_id TEXT PRIMARY KEY,idempotence_key TEXT NOT NULL UNIQUE,amount_cents INTEGER NOT NULL,provider_id TEXT,status TEXT NOT NULL DEFAULT 'pending',confirmation_url TEXT,created_at INTEGER NOT NULL);`);}
 export function testPaymentService(db,{config=paymentConfig(),send=fetch}={}) {
- async function call(path,body,key) {
+ async function call(path,body,key,methodOverride) {
   if(!config)throw new Error('Test payments are not configured');
-  const response=await send('https://api.yookassa.ru/v3/payments'+path,{method:body?'POST':'GET',headers:{Authorization:'Basic '+Buffer.from(config.shop+':'+config.key).toString('base64'),'Content-Type':'application/json',...(key?{'Idempotence-Key':key}:{})},...(body?{body:JSON.stringify(body)}:{}),redirect:'error',signal:AbortSignal.timeout(15000)});
+  const response=await send('https://api.yookassa.ru/v3/payments'+path,{method:methodOverride || (body?'POST':'GET'),headers:{Authorization:'Basic '+Buffer.from(config.shop+':'+config.key).toString('base64'),'Content-Type':'application/json',...(key?{'Idempotence-Key':key}:{})},...(body?{body:JSON.stringify(body)}:{}),redirect:'error',signal:AbortSignal.timeout(15000)});
   if(!response.ok)throw new Error('Payment provider request failed');
   const data=await response.json();
   if(data.test!==true||!/^\w[\w-]{1,80}$/.test(data.id)||!['pending','waiting_for_capture','succeeded','canceled'].includes(data.status))throw new Error('Invalid test payment response');
@@ -42,6 +42,16 @@ export function testPaymentService(db,{config=paymentConfig(),send=fetch}={}) {
    if(!row?.provider_id)return null;
    const data=await call('/'+encodeURIComponent(row.provider_id));verify(data,row);
    if(data.status==='succeeded'&&data.paid!==true)throw new Error('Payment is not paid');
+   db.prepare('UPDATE test_payments SET status=? WHERE resource_id=?').run(data.status,String(resourceId));
+   return {...row,status:data.status};
+  },
+  async cancel(resourceId) {
+   const row=db.prepare('SELECT * FROM test_payments WHERE resource_id=?').get(String(resourceId));
+   if(!row?.provider_id)return null;
+   if(row.status==='canceled')return row;
+   const data=await call('/'+encodeURIComponent(row.provider_id)+'/cancel',undefined,undefined,'POST');
+   verify(data,row);
+   if(data.status!=='canceled')throw new Error('Payment was not canceled');
    db.prepare('UPDATE test_payments SET status=? WHERE resource_id=?').run(data.status,String(resourceId));
    return {...row,status:data.status};
   }
