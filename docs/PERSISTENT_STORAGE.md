@@ -26,3 +26,29 @@ explicit choice of an available hosting plan. No plan or disk is purchased by
 this code change. Successful/cancelled YooKassa sandbox checkout and return-to-store
 still need to be tested against the actual test service. Real payment keys remain
 prohibited and delivery remains outside the task.
+
+
+## Free external PostgreSQL
+
+Set `DATABASE_URL` in the hosting environment to use PostgreSQL instead of the
+local SQLite file. Remote connections verify TLS certificates. The app initializes
+its schema under a lock, and seeds the catalog only when the products table is
+first created. Existing PostgreSQL stock is never reset during startup.
+
+Orders, line items, stock, request budgets and test-payment idempotency records
+share the external database. Checkout transactions serialize duplicate keys and
+stock reservations across replicas. Product row locks also protect checkout from
+concurrent owner inventory edits. Cancellation returns stock only for the first
+successful order-status transition, including concurrent retries.
+
+Local SQLite remains supported. Its statements are serialized while asynchronous
+transactions run. This is not an automatic SQLite-to-PostgreSQL data migration.
+The owner confirmed that all deployed data is test data, so the hosted rollout
+can initialize a fresh external database without migrating old test orders.
+
+Use a free Neon project instead of a paid Render disk. Stay within its free
+storage, compute and transfer limits; do not upgrade automatically. DATABASE_URL
+belongs in hosting secrets, never in this repository. CI uses PostgreSQL 16 to
+check simultaneous checkout, repeated cancellation, stock compare-and-set,
+receipt access and payment idempotency across reconnects. Live deployment and
+same-commit restart evidence will be recorded separately.
