@@ -1,3 +1,4 @@
+import { adaptDatabase, createPostgres } from "./database.js";
 import { initializePayments, testPaymentService } from "./payments.js";
 import { dataDirectory } from "./storage.js";
 import {ownerAccess,publicOrigin} from "./owner-access.js";
@@ -51,14 +52,15 @@ export function createDb(file = resolve(dataDirectory(), "roastory.db")) {
     throw error;
   }
 }
-export function createApp(db = createDb(), { now = Date.now } = {}) {
+export function createApp(db = createDb(), { now = Date.now, paymentOptions } = {}) {
+  db = adaptDatabase(db);
   const app = express();
   const hostedOrigin=publicOrigin();
-  const payments=testPaymentService(db);
+  const payments=testPaymentService(db, paymentOptions);
   const retentionDays=Number(process.env.CONTACT_RETENTION_DAYS || 90);
   if(!Number.isInteger(retentionDays)||retentionDays<1||retentionDays>3650)throw new Error('Invalid retention');
   let swept=-Infinity;
-  app.use('/api',(_req,_res,next)=>{const time=now();if(time-swept>=3600000){db.prepare("UPDATE orders SET customer='[removed]',email='' WHERE created_at<? AND email!=''").run(new Date(time-retentionDays*86400000).toISOString());swept=time;}next();});
+  app.use('/api',async(_req,_res,next)=>{const time=now();if(time-swept>=3600000){await db.prepare("UPDATE orders SET customer='[removed]',email='' WHERE created_at<? AND email!=''").run(new Date(time-retentionDays*86400000).toISOString());swept=time;}next();});
   app.use("/api", (req, res, next) => {
     if (hostedOrigin ? req.get("host") !== hostedOrigin.host : !["localhost", "127.0.0.1", "::1", "[::1]"].includes(req.hostname))
       return res.status(403).json({ message: "Используйте локальный адрес" });
@@ -80,7 +82,7 @@ export function createApp(db = createDb(), { now = Date.now } = {}) {
       ? next()
       : res.status(400).json({ message: "Некорректный идентификатор" }),
   );
-  app.get("/api/products", (req, res) => {
+  app.get("/api/products", async (req, res) => {
     const parsed = z
       .object({ process: z.string().max(80).default("") })
       .strict()
@@ -90,21 +92,21 @@ export function createApp(db = createDb(), { now = Date.now } = {}) {
     const { process } = parsed.data;
     const rows =
       process && process !== "all"
-        ? db
+        ? await db
             .prepare("SELECT * FROM products WHERE process=? AND available=1")
             .all(process)
-        : db.prepare("SELECT * FROM products WHERE available=1").all();
+        : await db.prepare("SELECT * FROM products WHERE available=1").all();
     res.json(rows);
   });
-  app.get("/api/products/:id", (req, res) => {
-    const p = db
+  app.get("/api/products/:id", async (req, res) => {
+    const p = await db
       .prepare("SELECT * FROM products WHERE id=? AND available=1")
       .get(Number(req.params.id));
     return p ? res.json(p) : res.status(404).json({ message: "Лот не найден" });
   });
-  app.post("/api/orders", (req, res) => {
+  app.post("/api/orders", async (req, res) => {
     const time = now();
-    const budget = consumeBudget(db, 'submit', 20, time);
+    const budget = await consumeBudget(db, 'submit', 20, time);
     if (!budget.allowed) return res.set('Retry-After', String(budget.retryAfter)).status(429).json({ message: 'Слишком много запросов. Повторите позже' });
     const schema = z.object({
       customer: z.string().trim().min(2).max(80),
@@ -131,92 +133,40 @@ export function createApp(db = createDb(), { now = Date.now } = {}) {
     const hash = createHash("sha256")
       .update(JSON.stringify(p.data))
       .digest("hex");
-    db.exec("BEGIN IMMEDIATE");
-    try {
-      const previous = key
-        ? db
-            .prepare(
-              "SELECT id,total,status,request_hash FROM orders WHERE request_key=?",
-            )
-            .get(key)
-        : null;
-      if (previous) {
-        db.exec("ROLLBACK");
-        return previous.request_hash === hash
-          ? res.json({
-              id: previous.id,
-              total: previous.total,
-              status: previous.status,
-              accessKey: key,
-            })
-          : res.status(409).json({
-              message: "Ключ операции уже использован с другими данными",
-            });
+    const result = await db.transaction(async () => {
+      const previous = await db.prepare('SELECT id,total,status,request_hash FROM orders WHERE request_key=?').get(key);
+      if(previous) return previous.request_hash===hash
+        ? {code:200,body:{id:previous.id,total:previous.total,status:previous.status,accessKey:key}}
+        : {code:409,body:{message:'Ключ операции уже использован с другими данными'}};
+      let total=0; const items=[];
+      // Validate the whole cart before changing any stock.
+      for(const item of p.data.items) {
+        const product=await db.prepare('SELECT id,price,available,stock FROM products WHERE id=?'+(db.kind==='postgres'?' FOR UPDATE':'')).get(item.productId);
+        if(!product || !product.available)return {code:400,body:{message:'Один из товаров недоступен'}};
+        if(!Number.isSafeInteger(product.price)||product.price<=0||product.price>1000000)throw new Error('Invalid catalog price');
+        if(product.stock===null||product.stock<item.quantity)return {code:409,body:{message:'Недостаточно подтверждённых остатков'}};
+        total+=product.price*item.quantity;items.push({...item,price:product.price});
       }
-      let total = 0;
-      const items = [];
-      for (const item of p.data.items) {
-        const product = db
-          .prepare("SELECT id,price,available,stock FROM products WHERE id=?")
-          .get(item.productId);
-        if (!product || !product.available) {
-          db.exec("ROLLBACK");
-          return res
-            .status(400)
-            .json({ message: "Один из товаров недоступен" });
-        }
-        if (
-          !Number.isSafeInteger(product.price) ||
-          product.price <= 0 ||
-          product.price > 1000000
-        )
-          throw new Error("Invalid catalog price");
-        if (product.stock === null || product.stock < item.quantity) {
-          db.exec("ROLLBACK");
-          return res.status(409).json({ message: "Недостаточно подтверждённых остатков" });
-        }
-        db.prepare('UPDATE products SET stock=stock-? WHERE id=?').run(item.quantity, item.productId);
-        total += product.price * item.quantity;
-        items.push({ ...item, price: product.price });
-      }
-      if (!Number.isSafeInteger(total)) throw new Error("Invalid order total");
-      const out = db
-        .prepare(
-          `INSERT INTO orders(customer,email,total,status,created_at,request_key,request_hash) VALUES(?,?,?,'new',?,?,?)`,
-        )
-        .run(
-          p.data.customer,
-          p.data.email,
-          total,
-          new Date(time).toISOString(),
-          key,
-          hash,
-        );
-      const add = db.prepare("INSERT INTO order_items VALUES(?,?,?,?)");
-      items.forEach((i) =>
-        add.run(out.lastInsertRowid, i.productId, i.quantity, i.price),
-      );
-      db.exec("COMMIT");
-      res
-        .status(201)
-        .json({ id: Number(out.lastInsertRowid), total, status: "new", accessKey:key });
-    } catch (e) {
-      if (db.isTransaction) db.exec("ROLLBACK");
-      throw e;
-    }
+      if(!Number.isSafeInteger(total))throw new Error('Invalid order total');
+      for(const item of items) await db.prepare('UPDATE products SET stock=stock-? WHERE id=?').run(item.quantity,item.productId);
+      const out=await db.prepare("INSERT INTO orders(customer,email,total,status,created_at,request_key,request_hash) VALUES(?,?,?,'new',?,?,?)").run(p.data.customer,p.data.email,total,new Date(time).toISOString(),key,hash);
+      for(const item of items)await db.prepare('INSERT INTO order_items VALUES(?,?,?,?)').run(out.lastInsertRowid,item.productId,item.quantity,item.price);
+      return {code:201,body:{id:Number(out.lastInsertRowid),total,status:'new',accessKey:key}};
+    });
+    res.status(result.code).json(result.body);
   });
-  app.get("/api/orders/:id", (req, res) => {
-    const allowed = db.prepare('SELECT request_key FROM orders WHERE id=?').get(Number(req.params.id));
+  app.get("/api/orders/:id", async (req, res) => {
+    const allowed = await db.prepare('SELECT request_key FROM orders WHERE id=?').get(Number(req.params.id));
     const supplied=req.get('X-Order-Key') || '';
     if(!allowed || !allowed.request_key || !supplied || createHash('sha256').update(supplied).digest('hex') !== createHash('sha256').update(allowed.request_key).digest('hex')) return res.status(404).json({message:'Заказ не найден'});
-    const o = db
+    const o = await db
       .prepare("SELECT id,total,status,created_at FROM orders WHERE id=?")
       .get(Number(req.params.id));
     return o
       ? res.json(o)
       : res.status(404).json({ message: "Заказ не найден" });
   });
-  const buyer=(req,res,next)=>{const row=db.prepare('SELECT * FROM orders WHERE id=?').get(Number(req.params.id));if(!row||!row.request_key||req.get('X-Order-Key')!==row.request_key)return res.status(404).json({message:'Заказ не найден'});req.order=row;next();};
+  const buyer=async(req,res,next)=>{const row=await db.prepare('SELECT * FROM orders WHERE id=?').get(Number(req.params.id));if(!row||!row.request_key||req.get('X-Order-Key')!==row.request_key)return res.status(404).json({message:'Заказ не найден'});req.order=row;next();};
   app.post('/api/orders/:id/payment',buyer,async(req,res)=>{
     if(!payments.enabled)return res.status(503).json({message:'Тестовая оплата не настроена'});
     const result=await payments.create(req.order.id,req.order.total*100,'Roastory: тестовая оплата заказа '+req.order.id);
@@ -224,28 +174,26 @@ export function createApp(db = createDb(), { now = Date.now } = {}) {
   });
   app.post('/api/orders/:id/payment/refresh',buyer,async(req,res)=>{
     const result=await payments.refresh(req.order.id);if(!result)return res.status(404).json({message:'Платёж не найден'});
-    if(result.status==='succeeded')db.prepare("UPDATE orders SET status='paid' WHERE id=?").run(req.order.id);
+    if(result.status==='succeeded')await db.prepare("UPDATE orders SET status='paid' WHERE id=?").run(req.order.id);
     res.json({test:true,status:result.status});
   });
   app.post('/api/orders/:id/payment/cancel',buyer,async(req,res)=>{
     if(!payments.enabled)return res.status(503).json({message:'Тестовая оплата не настроена'});
     const result=await payments.cancel(req.order.id);if(!result)return res.status(404).json({message:'Платёж не найден'});
-    if(result.status==='canceled' && req.order.status!=='canceled' && req.order.status!=='paid'){
-      db.exec('BEGIN IMMEDIATE');
-      try{
-        const items=db.prepare('SELECT product_id,quantity FROM order_items WHERE order_id=?').all(req.order.id);
-        for(const item of items)db.prepare('UPDATE products SET stock=stock+? WHERE id=?').run(item.quantity,item.product_id);
-        db.prepare("UPDATE orders SET status='canceled' WHERE id=? AND status NOT IN ('paid','canceled')").run(req.order.id);
-        db.exec('COMMIT');
-      }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
-    }
+    if(result.status==='canceled')await db.transaction(async()=>{
+      const changed=await db.prepare("UPDATE orders SET status='canceled' WHERE id=? AND status NOT IN ('paid','canceled')").run(req.order.id);
+      if(changed.changes) {
+        const items=await db.prepare('SELECT product_id,quantity FROM order_items WHERE order_id=?').all(req.order.id);
+        for(const item of items)await db.prepare('UPDATE products SET stock=stock+? WHERE id=?').run(item.quantity,item.product_id);
+      }
+    });
     res.json({test:true,status:result.status});
   });
-  app.get('/api/owner/orders',ownerAccess(),(_req,res)=>res.json(db.prepare('SELECT id,customer,email,total,status,created_at FROM orders ORDER BY id DESC LIMIT 100').all()));
-  app.patch('/api/owner/products/:id/stock',ownerAccess(),(req,res)=>{
+  app.get('/api/owner/orders',ownerAccess(),async(_req,res)=>res.json(await db.prepare('SELECT id,customer,email,total,status,created_at FROM orders ORDER BY id DESC LIMIT 100').all()));
+  app.patch('/api/owner/products/:id/stock',ownerAccess(),async(req,res)=>{
     const p=z.object({stock:z.number().int().min(0).max(1000000),expectedStock:z.number().int().min(0).nullable()}).strict().safeParse(req.body);
     if(!p.success)return res.status(400).json({message:'Проверьте остаток'});
-    const result=db.prepare('UPDATE products SET stock=? WHERE id=? AND stock IS ?').run(p.data.stock,Number(req.params.id),p.data.expectedStock);
+    const result=await db.prepare('UPDATE products SET stock=? WHERE id=? AND stock IS ?').run(p.data.stock,Number(req.params.id),p.data.expectedStock);
     if(!result.changes)return res.status(409).json({message:'Остаток уже изменён. Обновите данные.'});
     res.json({ok:true,stock:p.data.stock});
   });
@@ -272,9 +220,10 @@ if (process.env.NODE_ENV !== "test") {
     !["localhost", "127.0.0.1", "::1"].includes(process.env.HOST)
   )
     throw new Error("Roastory requires a loopback HOST");
-  createApp().listen(
+  createApp(process.env.DATABASE_URL ? await createPostgres() : createDb()).listen(
     process.env.PORT || 4500,
     process.env.HOST || "127.0.0.1",
     () => console.log("Roastory: http://localhost:4500"),
   );
 }
+

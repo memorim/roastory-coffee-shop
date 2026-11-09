@@ -27,33 +27,34 @@ export function testPaymentService(db,{config=paymentConfig(),send=fetch}={}) {
   async create(resourceId,amountCents,description) {
    if(!config)throw new Error('Test payments are not configured');
    if(!Number.isSafeInteger(amountCents)||amountCents<=0||amountCents>100000000000)throw new Error('Invalid payment amount');
-   db.prepare('INSERT OR IGNORE INTO test_payments(resource_id,idempotence_key,amount_cents,created_at) VALUES(?,?,?,?)').run(String(resourceId),randomUUID(),amountCents,Date.now());
-   const row=db.prepare('SELECT * FROM test_payments WHERE resource_id=?').get(String(resourceId));
+   await db.prepare('INSERT OR IGNORE INTO test_payments(resource_id,idempotence_key,amount_cents,created_at) VALUES(?,?,?,?)').run(String(resourceId),randomUUID(),amountCents,Date.now());
+   const row=await db.prepare('SELECT * FROM test_payments WHERE resource_id=?').get(String(resourceId));
    if(row.amount_cents!==amountCents)throw new Error('Payment amount changed; reconcile the existing payment');
    if(row.provider_id)return row;
    if(Date.now()-row.created_at>23*3600000)throw new Error('Payment reconciliation is required before another attempt');
    const data=await call('',{amount:{value:(amountCents/100).toFixed(2),currency:'RUB'},capture:true,confirmation:{type:'redirect',return_url:config.returnUrl},description:description.slice(0,128),metadata:{reference:row.idempotence_key}},row.idempotence_key);
    verify(data,row);
-   db.prepare('UPDATE test_payments SET provider_id=?,status=?,confirmation_url=? WHERE resource_id=?').run(data.id,data.status,data.confirmation?.confirmation_url||null,String(resourceId));
-   return db.prepare('SELECT * FROM test_payments WHERE resource_id=?').get(String(resourceId));
+   await db.prepare('UPDATE test_payments SET provider_id=?,status=?,confirmation_url=? WHERE resource_id=?').run(data.id,data.status,data.confirmation?.confirmation_url||null,String(resourceId));
+   return await db.prepare('SELECT * FROM test_payments WHERE resource_id=?').get(String(resourceId));
   },
   async refresh(resourceId) {
-   const row=db.prepare('SELECT * FROM test_payments WHERE resource_id=?').get(String(resourceId));
+   const row=await db.prepare('SELECT * FROM test_payments WHERE resource_id=?').get(String(resourceId));
    if(!row?.provider_id)return null;
    const data=await call('/'+encodeURIComponent(row.provider_id));verify(data,row);
    if(data.status==='succeeded'&&data.paid!==true)throw new Error('Payment is not paid');
-   db.prepare('UPDATE test_payments SET status=? WHERE resource_id=?').run(data.status,String(resourceId));
+   await db.prepare('UPDATE test_payments SET status=? WHERE resource_id=?').run(data.status,String(resourceId));
    return {...row,status:data.status};
   },
   async cancel(resourceId) {
-   const row=db.prepare('SELECT * FROM test_payments WHERE resource_id=?').get(String(resourceId));
+   const row=await db.prepare('SELECT * FROM test_payments WHERE resource_id=?').get(String(resourceId));
    if(!row?.provider_id)return null;
    if(row.status==='canceled')return row;
    const data=await call('/'+encodeURIComponent(row.provider_id)+'/cancel',undefined,undefined,'POST');
    verify(data,row);
    if(data.status!=='canceled')throw new Error('Payment was not canceled');
-   db.prepare('UPDATE test_payments SET status=? WHERE resource_id=?').run(data.status,String(resourceId));
+   await db.prepare('UPDATE test_payments SET status=? WHERE resource_id=?').run(data.status,String(resourceId));
    return {...row,status:data.status};
   }
  };
 }
+
