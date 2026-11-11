@@ -25,8 +25,8 @@ Attaching persistent storage requires access to its hosting configuration and an
 explicit choice of an available hosting plan. No plan or disk is purchased by
 this code change. Successful YooKassa sandbox checkout, return-to-store, server reconciliation and
 paid-order persistence after restart were verified on 11 November 2026; see
-[LIVE_PAYMENT_2026_11_11.md](LIVE_PAYMENT_2026_11_11.md). Provider cancellation remains
-a separate live check. Real payment keys remain
+[LIVE_PAYMENT_2026_11_11.md](LIVE_PAYMENT_2026_11_11.md). Provider cancellation was subsequently confirmed for technical order #2: the
+server recorded canceled and restored stock from 99 to 100. Real payment keys remain
 prohibited and delivery remains outside the task.
 
 
