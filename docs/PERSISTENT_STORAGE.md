@@ -20,11 +20,13 @@ The regression test closes and reopens the configured database, verifies stock
 and order access keys, and proves a pending test payment retains its provider ID
 and idempotency key without another creation request.
 
-The documented free Render integration environment has ephemeral storage.
+The free Render application filesystem is ephemeral; the deployed test service uses external PostgreSQL.
 Attaching persistent storage requires access to its hosting configuration and an
 explicit choice of an available hosting plan. No plan or disk is purchased by
-this code change. Successful/cancelled YooKassa sandbox checkout and return-to-store
-still need to be tested against the actual test service. Real payment keys remain
+this code change. Successful YooKassa sandbox checkout, return-to-store, server reconciliation and
+paid-order persistence after restart were verified on 11 November 2026; see
+[LIVE_PAYMENT_2026_11_11.md](LIVE_PAYMENT_2026_11_11.md). Provider cancellation remains
+a separate live check. Real payment keys remain
 prohibited and delivery remains outside the task.
 
 
