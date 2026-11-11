@@ -1,4 +1,4 @@
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
 export function paymentConfig(env=process.env) {
  if(!env.YOOKASSA_SHOP_ID&&!env.YOOKASSA_SECRET_KEY)return null;
  if(!/^\d+$/.test(env.YOOKASSA_SHOP_ID||'')||!env.YOOKASSA_SECRET_KEY?.startsWith('test_'))throw new Error('Only YooKassa test-shop credentials are permitted');
@@ -49,7 +49,13 @@ export function testPaymentService(db,{config=paymentConfig(),send=fetch}={}) {
    const row=await db.prepare('SELECT * FROM test_payments WHERE resource_id=?').get(String(resourceId));
    if(!row?.provider_id)return null;
    if(row.status==='canceled')return row;
-   const data=await call('/'+encodeURIComponent(row.provider_id)+'/cancel',undefined,undefined,'POST');
+   // Online redirect payments can only be canceled while awaiting capture.
+   // Refresh first: a pending or already completed payment must not be sent
+   // to the provider's cancellation endpoint.
+   const current=await this.refresh(resourceId);
+   if(current.status!=='waiting_for_capture')return current;
+   const cancelKey=createHash('sha256').update(row.idempotence_key+':cancel').digest('hex');
+   const data=await call('/'+encodeURIComponent(row.provider_id)+'/cancel',{},cancelKey,'POST');
    verify(data,row);
    if(data.status!=='canceled')throw new Error('Payment was not canceled');
    await db.prepare('UPDATE test_payments SET status=? WHERE resource_id=?').run(data.status,String(resourceId));

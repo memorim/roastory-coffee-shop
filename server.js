@@ -167,26 +167,33 @@ export function createApp(db = createDb(), { now = Date.now, paymentOptions } = 
       : res.status(404).json({ message: "Заказ не найден" });
   });
   const buyer=async(req,res,next)=>{const row=await db.prepare('SELECT * FROM orders WHERE id=?').get(Number(req.params.id));if(!row||!row.request_key||req.get('X-Order-Key')!==row.request_key)return res.status(404).json({message:'Заказ не найден'});req.order=row;next();};
+  const reconcilePayment = async (orderId, status) => db.transaction(async () => {
+    if (status === 'succeeded') {
+      await db.prepare("UPDATE orders SET status='paid' WHERE id=? AND status!='canceled'").run(orderId);
+    } else if (status === 'canceled') {
+      const changed = await db.prepare("UPDATE orders SET status='canceled' WHERE id=? AND status NOT IN ('paid','canceled')").run(orderId);
+      if (changed.changes) {
+        const items = await db.prepare('SELECT product_id,quantity FROM order_items WHERE order_id=?').all(orderId);
+        for (const item of items) await db.prepare('UPDATE products SET stock=stock+? WHERE id=?').run(item.quantity,item.product_id);
+      }
+    }
+  });
   app.post('/api/orders/:id/payment',buyer,async(req,res)=>{
     if(!payments.enabled)return res.status(503).json({message:'Тестовая оплата не настроена'});
+    if(req.order.status==='canceled')return res.status(409).json({message:'Заказ отменён'});
     const result=await payments.create(req.order.id,req.order.total*100,'Roastory: тестовая оплата заказа '+req.order.id);
     res.json({test:true,status:result.status,confirmationUrl:result.confirmation_url});
   });
   app.post('/api/orders/:id/payment/refresh',buyer,async(req,res)=>{
     const result=await payments.refresh(req.order.id);if(!result)return res.status(404).json({message:'Платёж не найден'});
-    if(result.status==='succeeded')await db.prepare("UPDATE orders SET status='paid' WHERE id=?").run(req.order.id);
+    await reconcilePayment(req.order.id,result.status);
     res.json({test:true,status:result.status});
   });
   app.post('/api/orders/:id/payment/cancel',buyer,async(req,res)=>{
     if(!payments.enabled)return res.status(503).json({message:'Тестовая оплата не настроена'});
     const result=await payments.cancel(req.order.id);if(!result)return res.status(404).json({message:'Платёж не найден'});
-    if(result.status==='canceled')await db.transaction(async()=>{
-      const changed=await db.prepare("UPDATE orders SET status='canceled' WHERE id=? AND status NOT IN ('paid','canceled')").run(req.order.id);
-      if(changed.changes) {
-        const items=await db.prepare('SELECT product_id,quantity FROM order_items WHERE order_id=?').all(req.order.id);
-        for(const item of items)await db.prepare('UPDATE products SET stock=stock+? WHERE id=?').run(item.quantity,item.product_id);
-      }
-    });
+    await reconcilePayment(req.order.id,result.status);
+    if(result.status!=='canceled')return res.status(409).json({test:true,status:result.status,message:result.status==='pending'?'Платёж ожидает подтверждения покупателя; отмена пока недоступна':'Платёж уже завершён; отмена недоступна'});
     res.json({test:true,status:result.status});
   });
   app.get('/api/owner/orders',ownerAccess(),async(_req,res)=>res.json(await db.prepare('SELECT id,customer,email,total,status,created_at FROM orders ORDER BY id DESC LIMIT 100').all()));
